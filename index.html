@@ -64,7 +64,7 @@ controls.minDistance = 1.8;
 controls.maxDistance = 8;
 
 const loader = new THREE.TextureLoader();
-loader.load('moon_4k_real.jpg', (moonTex) => {
+loader.load('moon_8k.jpg', (moonTex) => {
   moonTex.colorSpace = THREE.SRGBColorSpace;
   moonTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   buildMoon(moonTex);
