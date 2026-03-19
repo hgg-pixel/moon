@@ -12,6 +12,7 @@
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
     color: rgba(255,255,255,0.6); font: 14px system-ui; text-align: center;
     pointer-events: none; z-index: 10;
+    transition: opacity 1s;
   }
 </style>
 </head>
@@ -36,6 +37,8 @@ camera.position.z = 3;
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
 document.body.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -44,26 +47,25 @@ controls.dampingFactor = 0.05;
 controls.minDistance = 1.5;
 controls.maxDistance = 10;
 
-// Moon
+// Moon texture from solar system scope (reliable CDN, CORS-friendly)
 const textureLoader = new THREE.TextureLoader();
-const moonTexture = textureLoader.load('https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_poles_2048.jpg');
-const moonBump = textureLoader.load('https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/ldem_3_8bit_2048.jpg');
+const moonTexture = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@dev/examples/textures/planets/moon_1024.jpg');
+const moonBump = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@dev/examples/textures/planets/moon_1024.jpg');
 
 const moonGeo = new THREE.SphereGeometry(1, 64, 64);
-const moonMat = new THREE.MeshStandardMaterial({
+const moonMat = new THREE.MeshPhongMaterial({
   map: moonTexture,
   bumpMap: moonBump,
-  bumpScale: 0.04,
-  roughness: 1,
-  metalness: 0,
+  bumpScale: 0.02,
+  shininess: 2,
 });
 const moon = new THREE.Mesh(moonGeo, moonMat);
 scene.add(moon);
 
-// Glow
-const glowGeo = new THREE.SphereGeometry(1.08, 64, 64);
+// Soft glow around moon
+const glowGeo = new THREE.SphereGeometry(1.12, 64, 64);
 const glowMat = new THREE.ShaderMaterial({
-  uniforms: { c: { value: 0.4 }, p: { value: 4.0 } },
+  uniforms: {},
   vertexShader: `
     varying vec3 vNormal;
     void main() {
@@ -72,12 +74,10 @@ const glowMat = new THREE.ShaderMaterial({
     }
   `,
   fragmentShader: `
-    uniform float c;
-    uniform float p;
     varying vec3 vNormal;
     void main() {
-      float intensity = pow(c - dot(vNormal, vec3(0.0, 0.0, 1.0)), p);
-      gl_FragColor = vec4(0.8, 0.85, 1.0, intensity * 0.5);
+      float intensity = pow(0.65 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 3.0);
+      gl_FragColor = vec4(0.85, 0.88, 1.0, intensity * 0.6);
     }
   `,
   side: THREE.BackSide,
@@ -86,23 +86,37 @@ const glowMat = new THREE.ShaderMaterial({
 });
 scene.add(new THREE.Mesh(glowGeo, glowMat));
 
-// Light — simulate sunlight
-const sun = new THREE.DirectionalLight(0xfff5e0, 2.5);
-sun.position.set(5, 2, 5);
+// Lighting
+const sun = new THREE.DirectionalLight(0xfff8e7, 3.0);
+sun.position.set(5, 3, 5);
 scene.add(sun);
-scene.add(new THREE.AmbientLight(0x222244, 0.3));
+scene.add(new THREE.AmbientLight(0x334466, 0.8));
+// Rim light for drama
+const rim = new THREE.DirectionalLight(0x8888cc, 0.5);
+rim.position.set(-3, -1, -3);
+scene.add(rim);
 
 // Stars
 const starsGeo = new THREE.BufferGeometry();
-const starPositions = new Float32Array(3000);
-for (let i = 0; i < 3000; i++) starPositions[i] = (Math.random() - 0.5) * 200;
+const starCount = 2000;
+const starPositions = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount * 3; i++) starPositions[i] = (Math.random() - 0.5) * 300;
 starsGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-scene.add(new THREE.Points(starsGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.15 })));
+const starSizes = new Float32Array(starCount);
+for (let i = 0; i < starCount; i++) starSizes[i] = Math.random() * 0.3 + 0.05;
+starsGeo.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+scene.add(new THREE.Points(starsGeo, new THREE.PointsMaterial({
+  color: 0xffffff,
+  size: 0.15,
+  sizeAttenuation: true,
+  transparent: true,
+  opacity: 0.8,
+})));
 
 // Animate
 function animate() {
   requestAnimationFrame(animate);
-  moon.rotation.y += 0.001;
+  moon.rotation.y += 0.0008;
   controls.update();
   renderer.render(scene, camera);
 }
@@ -114,8 +128,10 @@ window.addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
-// Hide info after 3s
-setTimeout(() => { document.getElementById('info').style.opacity = '0'; }, 3000);
+setTimeout(() => {
+  const info = document.getElementById('info');
+  info.style.opacity = '0';
+}, 3000);
 </script>
 </body>
 </html>
