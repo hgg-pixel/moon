@@ -36,20 +36,34 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 1000);
-camera.position.z = 3;
+camera.position.z = 3.2;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
 document.body.appendChild(renderer.domElement);
+
+// Bloom — 梦幻柔光
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(
+  new THREE.Vector2(innerWidth, innerHeight),
+  1.4, 0.9, 0.12
+);
+composer.addPass(bloom);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
-controls.minDistance = 1.5;
+controls.minDistance = 1.8;
 controls.maxDistance = 8;
 
 const loader = new THREE.TextureLoader();
@@ -57,76 +71,82 @@ const moonTex  = loader.load('moon_color.jpg');
 const moonBump = loader.load('moon_bump.jpg');
 moonTex.colorSpace = THREE.SRGBColorSpace;
 
-// Moon — 通透感：低roughness + 强emissive蓝白 + 正面打光
-const moonGeo = new THREE.SphereGeometry(1, 64, 64);
+const moonGeo = new THREE.SphereGeometry(1, 128, 128);
 const moonMat = new THREE.MeshStandardMaterial({
   map: moonTex,
   bumpMap: moonBump,
-  bumpScale: 0.025,
-  roughness: 0.55,
+  bumpScale: 0.02,
+  roughness: 0.45,
   metalness: 0.0,
-  emissive: new THREE.Color(0x5a78cc),
-  emissiveIntensity: 0.38,
+  emissive: new THREE.Color(0x7088cc),
+  emissiveIntensity: 0.5,
 });
 const moon = new THREE.Mesh(moonGeo, moonMat);
 scene.add(moon);
 
-// 光源从正面打 = full moon，不留黑边
-const front = new THREE.DirectionalLight(0xd8e8ff, 4.5);
-front.position.set(0, 0, 10);   // 正对镜头
+const front = new THREE.DirectionalLight(0xe0ecff, 3.8);
+front.position.set(0, 0, 10);
 scene.add(front);
-
-// 补一圈柔光，让月球表面更均匀
-scene.add(new THREE.AmbientLight(0x8899cc, 2.8));
-
-// 顶部蓝白轮廓光
-const top = new THREE.DirectionalLight(0xaabbff, 1.2);
-top.position.set(0, 5, 2);
-scene.add(top);
-
-// 内发光：一个PointLight放在球心
-const inner = new THREE.PointLight(0x99bbff, 1.5, 3);
+scene.add(new THREE.AmbientLight(0x6677aa, 1.5));
+const rim = new THREE.DirectionalLight(0x8899dd, 1.0);
+rim.position.set(0, 5, 2);
+scene.add(rim);
+const inner = new THREE.PointLight(0xaaccff, 2.0, 4);
 inner.position.set(0, 0, 0);
 scene.add(inner);
 
-// Halo 三层
+// 5层光晕 + 呼吸
 function halo(radius, c, p, color, alpha) {
   const mat = new THREE.ShaderMaterial({
-    uniforms: { c:{value:c}, p:{value:p}, col:{value:color}, a:{value:alpha} },
-    vertexShader: `varying vec3 vN; void main(){ vN=normalize(normalMatrix*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1); }`,
-    fragmentShader: `uniform float c,p,a; uniform vec3 col; varying vec3 vN; void main(){ float i=pow(c-dot(vN,vec3(0,0,1)),p); gl_FragColor=vec4(col,i*a); }`,
+    uniforms: {
+      c:{value:c}, p:{value:p}, col:{value:color}, a:{value:alpha}, time:{value:0}
+    },
+    vertexShader: 'varying vec3 vN; void main(){ vN = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'uniform float c, p, a, time; uniform vec3 col; varying vec3 vN; void main(){ float breath = 1.0 + 0.06 * sin(time * 0.8); float i = pow(c - dot(vN, vec3(0,0,1)), p) * breath; gl_FragColor = vec4(col, i * a); }',
     side: THREE.BackSide, blending: THREE.AdditiveBlending,
     transparent: true, depthWrite: false,
   });
-  scene.add(new THREE.Mesh(new THREE.SphereGeometry(radius,64,64), mat));
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(radius, 64, 64), mat));
+  return mat;
 }
-halo(1.06, 0.50, 3.0, new THREE.Color(0.95,0.97,1.00), 0.65); // 白色紧贴
-halo(1.22, 0.58, 4.0, new THREE.Color(0.50,0.65,1.00), 0.40); // 蓝色中圈
-halo(1.60, 0.63, 5.5, new THREE.Color(0.30,0.25,0.75), 0.20); // 紫色外晕
+const halos = [
+  halo(1.04, 0.45, 2.5, new THREE.Color(1.0, 1.0, 1.0),   0.70),
+  halo(1.12, 0.50, 3.0, new THREE.Color(0.85,0.90,1.0),    0.55),
+  halo(1.28, 0.55, 3.5, new THREE.Color(0.55,0.68,1.0),    0.40),
+  halo(1.55, 0.60, 4.5, new THREE.Color(0.40,0.35,0.85),   0.25),
+  halo(2.00, 0.65, 5.5, new THREE.Color(0.25,0.18,0.60),   0.12),
+];
 
-// Stars
 function stars(n, size, op) {
   const geo = new THREE.BufferGeometry();
-  const p = new Float32Array(n*3);
-  for(let i=0;i<n*3;i++) p[i]=(Math.random()-.5)*300;
-  geo.setAttribute('position', new THREE.BufferAttribute(p,3));
-  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({color:0xffffff,size,transparent:true,opacity:op})));
+  const pos = new Float32Array(n*3);
+  for(let i=0;i<n*3;i++) pos[i]=(Math.random()-.5)*300;
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
+    color:0xffffff, size, transparent:true, opacity:op, sizeAttenuation:true
+  })));
 }
-stars(2000, 0.18, 0.8);
-stars(600,  0.32, 0.5);
+stars(3000, 0.12, 0.7);
+stars(800,  0.25, 0.5);
+stars(120,  0.55, 0.3);
 
+const clock = new THREE.Clock();
 function animate(){
   requestAnimationFrame(animate);
-  moon.rotation.y += 0.0007;
+  const t = clock.getElapsedTime();
+  moon.rotation.y += 0.0006;
+  halos.forEach(m => m.uniforms.time.value = t);
+  moonMat.emissiveIntensity = 0.5 + 0.08 * Math.sin(t * 0.6);
   controls.update();
-  renderer.render(scene, camera);
+  composer.render();
 }
 animate();
 
 window.addEventListener('resize',()=>{
-  camera.aspect=innerWidth/innerHeight;
+  camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth,innerHeight);
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
 });
 setTimeout(()=>document.getElementById('info').style.opacity='0', 4000);
 </script>
