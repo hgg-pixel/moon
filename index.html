@@ -18,11 +18,20 @@
     background: #05020a; color: rgba(255,255,255,0.4); font: 16px system-ui;
     z-index: 100; transition: opacity 0.8s;
   }
+  #ar-btn {
+    position: fixed; bottom: 24px; right: 24px; z-index: 10;
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.6); font: 14px system-ui; padding: 10px 20px;
+    border-radius: 100px; text-decoration: none; backdrop-filter: blur(8px);
+    transition: background 0.2s, color 0.2s;
+  }
+  #ar-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
 </style>
 </head>
 <body>
 <div id="loading">加载月球纹理…</div>
 <div id="info">拖动旋转 · 双指缩放</div>
+<a id="ar-btn" href="ar.html">📱 AR</a>
 <script type="importmap">
 {
   "imports": {
