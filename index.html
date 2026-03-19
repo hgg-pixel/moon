@@ -6,19 +6,18 @@
 <title>🌕</title>
 <style>
   * { margin: 0; padding: 0; }
-  body { background: #000; overflow: hidden; touch-action: none; }
+  body { background: #000507; overflow: hidden; touch-action: none; }
   canvas { display: block; width: 100vw; height: 100vh; }
   #info {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-    color: rgba(255,255,255,0.5); font: 14px system-ui; text-align: center;
+    color: rgba(255,255,255,0.45); font: 14px system-ui; text-align: center;
     pointer-events: none; z-index: 10; transition: opacity 1.5s;
   }
   #ar-btn {
     position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%);
-    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);
     color: #fff; font-size: 15px; padding: 10px 28px; border-radius: 100px;
-    cursor: pointer; backdrop-filter: blur(8px); text-decoration: none;
-    z-index: 10;
+    cursor: pointer; backdrop-filter: blur(8px); text-decoration: none; z-index: 10;
   }
 </style>
 </head>
@@ -49,88 +48,74 @@ document.body.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.dampingFactor = 0.05;
+controls.dampingFactor = 0.06;
 controls.minDistance = 1.5;
 controls.maxDistance = 8;
 
 const loader = new THREE.TextureLoader();
 const moonTex  = loader.load('moon_color.jpg');
 const moonBump = loader.load('moon_bump.jpg');
-
-// Moon surface — slightly cool-tinted for dreaminess
 moonTex.colorSpace = THREE.SRGBColorSpace;
+
+// Moon — 通透感：低roughness + 强emissive蓝白 + 正面打光
 const moonGeo = new THREE.SphereGeometry(1, 64, 64);
 const moonMat = new THREE.MeshStandardMaterial({
   map: moonTex,
   bumpMap: moonBump,
-  bumpScale: 0.04,
-  roughness: 0.88,
+  bumpScale: 0.025,
+  roughness: 0.55,
   metalness: 0.0,
-  emissive: new THREE.Color(0x2a3a5a),   // blue inner glow
-  emissiveIntensity: 0.18,
+  emissive: new THREE.Color(0x5a78cc),
+  emissiveIntensity: 0.38,
 });
 const moon = new THREE.Mesh(moonGeo, moonMat);
 scene.add(moon);
 
-// Layer 1: tight inner halo — warm white
-addHalo(1.05, 0.55, 3.5, new THREE.Color(0.95, 0.96, 1.00), 0.50);
-// Layer 2: mid halo — cool blue
-addHalo(1.18, 0.60, 4.0, new THREE.Color(0.55, 0.70, 1.00), 0.30);
-// Layer 3: wide outer halo — deep purple
-addHalo(1.45, 0.65, 5.0, new THREE.Color(0.40, 0.30, 0.80), 0.15);
+// 光源从正面打 = full moon，不留黑边
+const front = new THREE.DirectionalLight(0xd8e8ff, 4.5);
+front.position.set(0, 0, 10);   // 正对镜头
+scene.add(front);
 
-function addHalo(radius, c, p, color, alpha) {
-  const geo = new THREE.SphereGeometry(radius, 64, 64);
+// 补一圈柔光，让月球表面更均匀
+scene.add(new THREE.AmbientLight(0x8899cc, 2.8));
+
+// 顶部蓝白轮廓光
+const top = new THREE.DirectionalLight(0xaabbff, 1.2);
+top.position.set(0, 5, 2);
+scene.add(top);
+
+// 内发光：一个PointLight放在球心
+const inner = new THREE.PointLight(0x99bbff, 1.5, 3);
+inner.position.set(0, 0, 0);
+scene.add(inner);
+
+// Halo 三层
+function halo(radius, c, p, color, alpha) {
   const mat = new THREE.ShaderMaterial({
-    uniforms: {
-      c: { value: c }, p: { value: p },
-      glowColor: { value: color }, alpha: { value: alpha },
-    },
-    vertexShader: `
-      varying vec3 vNormal;
-      void main(){
-        vNormal = normalize(normalMatrix * normal);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
-      }`,
-    fragmentShader: `
-      uniform float c, p, alpha;
-      uniform vec3 glowColor;
-      varying vec3 vNormal;
-      void main(){
-        float i = pow(c - dot(vNormal, vec3(0,0,1)), p);
-        gl_FragColor = vec4(glowColor, i * alpha);
-      }`,
-    side: THREE.BackSide,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    depthWrite: false,
+    uniforms: { c:{value:c}, p:{value:p}, col:{value:color}, a:{value:alpha} },
+    vertexShader: `varying vec3 vN; void main(){ vN=normalize(normalMatrix*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1); }`,
+    fragmentShader: `uniform float c,p,a; uniform vec3 col; varying vec3 vN; void main(){ float i=pow(c-dot(vN,vec3(0,0,1)),p); gl_FragColor=vec4(col,i*a); }`,
+    side: THREE.BackSide, blending: THREE.AdditiveBlending,
+    transparent: true, depthWrite: false,
   });
-  scene.add(new THREE.Mesh(geo, mat));
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(radius,64,64), mat));
 }
+halo(1.06, 0.50, 3.0, new THREE.Color(0.95,0.97,1.00), 0.65); // 白色紧贴
+halo(1.22, 0.58, 4.0, new THREE.Color(0.50,0.65,1.00), 0.40); // 蓝色中圈
+halo(1.60, 0.63, 5.5, new THREE.Color(0.30,0.25,0.75), 0.20); // 紫色外晕
 
-// Lighting — bright key + generous fill so dark side stays visible
-const sun = new THREE.DirectionalLight(0xfff0d0, 3.8);
-sun.position.set(4, 2, 5);
-scene.add(sun);
-scene.add(new THREE.AmbientLight(0x6677aa, 2.2));   // strong blue-grey fill
-const rim = new THREE.DirectionalLight(0x8899dd, 0.8);
-rim.position.set(-4, -1, -4);
-scene.add(rim);
-
-// Stars — two sizes for depth
-function addStars(count, size, opacity) {
+// Stars
+function stars(n, size, op) {
   const geo = new THREE.BufferGeometry();
-  const pos = new Float32Array(count * 3);
-  for (let i = 0; i < count*3; i++) pos[i] = (Math.random()-0.5)*300;
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
-    color: 0xffffff, size, transparent: true, opacity,
-  })));
+  const p = new Float32Array(n*3);
+  for(let i=0;i<n*3;i++) p[i]=(Math.random()-.5)*300;
+  geo.setAttribute('position', new THREE.BufferAttribute(p,3));
+  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({color:0xffffff,size,transparent:true,opacity:op})));
 }
-addStars(2000, 0.18, 0.8);
-addStars(800,  0.35, 0.5);
+stars(2000, 0.18, 0.8);
+stars(600,  0.32, 0.5);
 
-function animate() {
+function animate(){
   requestAnimationFrame(animate);
   moon.rotation.y += 0.0007;
   controls.update();
@@ -138,12 +123,12 @@ function animate() {
 }
 animate();
 
-window.addEventListener('resize', () => {
-  camera.aspect = innerWidth/innerHeight;
+window.addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  renderer.setSize(innerWidth,innerHeight);
 });
-setTimeout(() => document.getElementById('info').style.opacity='0', 4000);
+setTimeout(()=>document.getElementById('info').style.opacity='0', 4000);
 </script>
 </body>
 </html>
