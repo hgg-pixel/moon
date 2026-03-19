@@ -101,35 +101,38 @@ document.body.appendChild(renderer.domElement);
 
 const MOON_DISTANCE = 30;
 
-// Start with procedural texture (instant), upgrade to 8K later
-const moonMat = new THREE.MeshPhysicalMaterial({
-  map: makeMoonTexture(1024), roughness: 0.95, metalness: 0,
-  clearcoat: 0.05, transmission: 0.08,
+// Moon: self-illuminating via emissive — no harsh external light
+const procTex = makeMoonTexture(1024);
+const moonMat = new THREE.MeshStandardMaterial({
+  map: procTex, emissiveMap: procTex,
+  emissive: new THREE.Color(0xddd8cc), emissiveIntensity: 0.6,
+  roughness: 1, metalness: 0,
 });
 const moon = new THREE.Mesh(new THREE.SphereGeometry(3, 64, 64), moonMat);
 
-// Async upgrade to 8K
+// Async 8K upgrade
 new THREE.TextureLoader().load('moon_8k.jpg', tex => {
   tex.colorSpace = THREE.SRGBColorSpace;
-  moonMat.map = tex;
-  moonMat.needsUpdate = true;
+  moonMat.map = tex; moonMat.emissiveMap = tex; moonMat.needsUpdate = true;
 });
 
-// Glow
-const glowMat = new THREE.ShaderMaterial({
-  vertexShader: `varying vec3 vN;void main(){vN=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
-  fragmentShader: `varying vec3 vN;void main(){float i=pow(0.65-dot(vN,vec3(0,0,1)),3.);gl_FragColor=vec4(.9,.92,1.,i*.5);}`,
-  side: THREE.BackSide, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
-});
-const glow = new THREE.Mesh(new THREE.SphereGeometry(3.4, 48, 48), glowMat);
-
+// Soft volumetric glow — 3 graduated layers
 const moonGroup = new THREE.Group();
 moonGroup.add(moon);
-moonGroup.add(glow);
+for (const [s, o, c] of [[1.08,.12,[.95,.93,.85]], [1.18,.06,[.9,.9,.95]], [1.35,.025,[.85,.88,1.]]]) {
+  const m = new THREE.ShaderMaterial({
+    vertexShader: `varying vec3 vN;void main(){vN=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader: `varying vec3 vN;uniform vec3 c;uniform float o;void main(){float i=pow(0.7-dot(vN,vec3(0,0,1)),2.5);gl_FragColor=vec4(c,i*o);}`,
+    uniforms: { c: { value: new THREE.Vector3(...c) }, o: { value: o } },
+    side: THREE.BackSide, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
+  });
+  moonGroup.add(new THREE.Mesh(new THREE.SphereGeometry(3*s, 48, 48), m));
+}
 scene.add(moonGroup);
 
-scene.add(new THREE.DirectionalLight(0xfff5e0, 2.5).translateX(10).translateY(8).translateZ(5));
-scene.add(new THREE.AmbientLight(0x334455, 0.8));
+// Dim fill only — moon self-lights
+scene.add(new THREE.DirectionalLight(0xfff5e0, 0.4).translateX(5).translateY(5).translateZ(3));
+scene.add(new THREE.AmbientLight(0x222233, 0.3));
 
 /* ── Gyro state ── */
 let alpha = 0, beta = 0, gamma = 0;
